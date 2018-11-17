@@ -15,19 +15,28 @@ library(tidyverse)
 
 ```{r}
 # read data from github repo
-homicide_raw <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv") %>% 
+homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv") %>% 
 	# create city_state variable
 	unite(col = "city_state", city:state, sep = ", ", remove = FALSE) %>% 
-	mutate(solved = "Closed by arrest" %in% disposition) %>% 
+	# create a variable for resolved
+	mutate(resolved = disposition %in% "Closed by arrest") %>%
+	# select cities with victim race
 	filter(!(city_state %in% c("Dallas, TX",
 														 "Phoenix, AZ",
 														 "Kansas City, MO",
 														 "Tulsa, AL"))) %>%
+	# change victim to numeric variable, race into factors
 	mutate(victim_age = as.numeric(victim_age),
-				 victim_race = if_else(victim_race == "White", "white", "non-white"))
+				# victim_race = if_else(victim_race == "White", "White", "Non-White"),
+				 victim_race = fct_relevel(victim_race, "White")) 
 	
-		
-  
+glm_baltimore <- homicide %>% 
+	filter(city_state == "Baltimore, MD") %>%
+	glm(resolved ~ victim_age + victim_sex + victim_race,
+			data = .,
+			family = binomial())
+broom::tidy(glm_baltimore)
+glm_baltimore
 
 ```
 
