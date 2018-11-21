@@ -27,21 +27,19 @@ homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homi
 														 "Tulsa, AL"))) %>%
 	# change victim to numeric variable, race into factors
 	mutate(victim_age = as.numeric(victim_age),
-				# victim_race = if_else(victim_race == "White", "White", "Non-White"),
-				 victim_race = fct_relevel(victim_race, "White")) 
+				 victim_race = if_else(victim_race == "White", "white", "non-white"),
+				 victim_race = fct_relevel(victim_race, "white")) 
 
-glm_conf <- function(city_data){
-	glm_result <- glm(resolved ~ victim_age + victim_sex + victim_race, data = city_data)
-	glm_conf <- confint(glm_result)
-	glm_result <- broom::tidy(glm_result)
-	cbind(glm_result, glm_conf)
-}
 
-glm_baltimore <- homicide %>%
-	filter(city_state == "Chicago, IL") #%>% 
-	glm(resolved ~ victim_age + victim_sex + victim_race, 
-		data = .)
-	
+glm_test <- homicide %>%
+	filter(city_state == "Baltimore, MD")
+glm_result <- glm(resolved ~ victim_age + victim_sex + victim_race, data = glm_test)
+glm_conf <- as_tibble(confint(glm_result))
+glm_result <- broom::tidy(glm_result)
+result_test <- as_tibble(cbind(glm_result, glm_conf)) %>%
+	janitor::clean_names() %>%
+	mutate(calc_upper = estimate + qnorm(0.975) * std_error,
+				 calc_lower = estimate - qnorm(0.975) * std_error)
 
 glm_all_cities <- homicide %>% 
 	select(city_state, resolved, victim_age, victim_sex, victim_race) %>%
@@ -49,31 +47,34 @@ glm_all_cities <- homicide %>%
 	nest(resolved, victim_age, victim_sex, victim_race) %>%
 	# get logistic regression model
 	mutate(glm_model = map(.x = data,
-												 .f = ~ glm(resolved ~ victim_age + victim_sex + victim_race, 
-												 					 data = .x))) %>% 
-	group_by(city_state) %>% 
+												 .f = ~ broom::tidy(glm(resolved ~
+												 											 	victim_age + 
+												 											 	victim_sex +
+												 											 	victim_race,
+												 											 data = .x)))) %>%
+	select(city_state, glm_model) %>%
+	unnest() %>%
+	janitor::clean_names() %>% 
 	# get confidence interval
-	mutate(conf = glm_model[[1]] %>% confint() %>% as_tibble %>% list) %>% 
-	# tidy the output
-	mutate(glm_model = map(.x = glm_model, .f = ~ broom::tidy(.x))) %>%
-	select(city_state, glm_model, conf) %>%
-	filter(city_state == "Chicago, IL") %>%
-	unnest(glm_model, .perserve = conf) %>% View
-	rename("conf_low" = "2.5 %", "conf_high" = "97.5 %") %>% 
-	filter(term == "victim_raceBlack") %>% 
-	select(city_state, estimate, conf_low, conf_high)
-	
-		
-broom::tidy(glm_baltimore) %>%
-	filter(term == "victim_raceBlack") %>% confint()
-	mutate(conf_low = map2_dbl(.x = estimate,
-										 .y = std.error,
-										 .f = ~ .x - qnorm(0.975) * .y)) %>% 
-	mutate(conf_high = map2_dbl(.x = estimate,
-										 .y = std.error,
-										 .f = ~ .x + qnorm(0.975) * .y))
+	mutate(conf_upper = estimate + qnorm(0.975) * std_error,
+				 conf_lower = estimate - qnorm(0.975) * std_error) %>%
+	filter(term == "victim_racenon-white") %>%
+	mutate(estimate = exp(estimate),
+				 conf_upper = exp(conf_upper),
+				 conf_lower = exp(conf_lower))
 
-exp(1)^confint(glm_baltimore)
+glm_all_cities %>% 
+	ggplot(aes(x = fct_reorder(city_state, estimate), y = estimate)) +
+	geom_point() +
+	geom_errorbar(aes(ymin = conf_lower, ymax = conf_upper), position = "dodge") +
+	labs(
+		x = "City",
+		y = "Odds Ratio"
+	) +
+	theme(
+		axis.text.x = element_text(angle = 90)
+	)
+	
 
 
 ```
