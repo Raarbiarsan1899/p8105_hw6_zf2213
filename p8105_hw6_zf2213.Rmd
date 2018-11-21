@@ -29,14 +29,52 @@ homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homi
 	mutate(victim_age = as.numeric(victim_age),
 				# victim_race = if_else(victim_race == "White", "White", "Non-White"),
 				 victim_race = fct_relevel(victim_race, "White")) 
+
+glm_conf <- function(city_data){
+	glm_result <- glm(resolved ~ victim_age + victim_sex + victim_race, data = city_data)
+	glm_conf <- confint(glm_result)
+	glm_result <- broom::tidy(glm_result)
+	cbind(glm_result, glm_conf)
+}
+
+glm_baltimore <- homicide %>%
+	filter(city_state == "Chicago, IL") #%>% 
+	glm(resolved ~ victim_age + victim_sex + victim_race, 
+		data = .)
 	
-glm_baltimore <- homicide %>% 
-	filter(city_state == "Baltimore, MD") %>%
-	glm(resolved ~ victim_age + victim_sex + victim_race,
-			data = .,
-			family = binomial())
-broom::tidy(glm_baltimore)
-glm_baltimore
+
+glm_all_cities <- homicide %>% 
+	select(city_state, resolved, victim_age, victim_sex, victim_race) %>%
+	group_by(city_state) %>% 
+	nest(resolved, victim_age, victim_sex, victim_race) %>%
+	# get logistic regression model
+	mutate(glm_model = map(.x = data,
+												 .f = ~ glm(resolved ~ victim_age + victim_sex + victim_race, 
+												 					 data = .x))) %>% 
+	group_by(city_state) %>% 
+	# get confidence interval
+	mutate(conf = glm_model[[1]] %>% confint() %>% as_tibble %>% list) %>% 
+	# tidy the output
+	mutate(glm_model = map(.x = glm_model, .f = ~ broom::tidy(.x))) %>%
+	select(city_state, glm_model, conf) %>%
+	filter(city_state == "Chicago, IL") %>%
+	unnest(glm_model, .perserve = conf) %>% View
+	rename("conf_low" = "2.5 %", "conf_high" = "97.5 %") %>% 
+	filter(term == "victim_raceBlack") %>% 
+	select(city_state, estimate, conf_low, conf_high)
+	
+		
+broom::tidy(glm_baltimore) %>%
+	filter(term == "victim_raceBlack") %>% confint()
+	mutate(conf_low = map2_dbl(.x = estimate,
+										 .y = std.error,
+										 .f = ~ .x - qnorm(0.975) * .y)) %>% 
+	mutate(conf_high = map2_dbl(.x = estimate,
+										 .y = std.error,
+										 .f = ~ .x + qnorm(0.975) * .y))
+
+exp(1)^confint(glm_baltimore)
+
 
 ```
 
