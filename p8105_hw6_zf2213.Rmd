@@ -104,7 +104,9 @@ Highest non-white vs white odds ratio of solved cases is Tempa, FL, and lowest o
 
 ```{r data_cleaning_pr2}
 birthweight <- read_csv("./birthweight.csv") %>% 
-# recode the factor variables
+  # recode the factor variables
+  # note that for father and mother's races, half is white and half is non white,
+	# so collapse to two categories
 	mutate(babysex = fct_recode(as.factor(babysex), "female" = "2", "male" = "1"),
 				 # female as reference
 				 babysex = fct_relevel(babysex, "female"),
@@ -124,6 +126,9 @@ birthweight <- read_csv("./birthweight.csv") %>%
 				 )
 
 ```
+
+Turn father's race, mother's race, malformation, baby's sex into factor variables.
+Since black and white are majority, collapse the race variables into two categories, white and non-white.
 
 
 ```{r regression_function}
@@ -253,7 +258,9 @@ stepwise_reg <- function(data, y, in_alpha = 0.1) {
 
 # forward selection
 birthweight_lm <- stepwise_reg(data = birthweight, y = "bwt", in_alpha = 0.01)
-birthweight_lm[[1]] %>% summary() %>% broom::tidy() %>% knitr::kable()
+birthweight_lm[[1]] %>%
+	summary() %>%
+	broom::tidy()
 
 ```
 
@@ -261,7 +268,8 @@ Do a stepwise forward regression:
 Start with a model with only intercept, Y ~ 1, fit each predictors into the model to see if its p value less than predefined alpha level, if p value small than predefined alpha level, then add to the model, Y ~ X1.
 Then, fit the remaining predictors one by one into the model with X1, if the p value small than predefined alpha level, then add to the model, Y ~ X1 + X2.
 Repeat the cycles until no remaining predictors will have p value less than predefined alpha level, return the model and selection history.
-
+Define a function to do the stepwise regression, note that this function only works for factor variable with two levels.
+frace and mrace has strong correlation, ppbmi and wtgain also has strong correlation. They will cause multicollinearity issues if both partners in each pair exist in the model.
 
 
 ```{r residuals_vs_predictions}
@@ -274,26 +282,46 @@ birthweight %>%
 	modelr::add_residuals(model = birthweight_lm[[1]]) %>% 
 	# plot
 	ggplot(aes(x = pred, y = resid)) +
-	  geom_point()
+	  geom_point() +
+	  labs(
+	  	x = "Fitted values (birth weight (grams))",
+	  	y = "Residuals"
+	  )
+
 
 ```
 
 Model #1:
 
-baby's head circumference (cm)
-baby's birth length (cm)
-mother's race
-...
+baby's head circumference (cm),
+
+baby's birth length (cm),
+
+mother's race,
+
+mother's weight at delivery (pounds),
+
+gestational age (week),
+
+cigarettes smoked per day during pregnancy,
+
+mother's pregnancy BMI,
+
+baby's sex
+
 
 Model #2:
 
 baby's head circumference (cm),
+
 baby's length (cm),
+
 baby's sex
 
 Model #3:
 
 baby's length (cm),
+
 gestational age (week)
 
 
@@ -335,10 +363,17 @@ crossv_mc(data = birthweight, n = 100) %>%
 	) %>% 
 	# get mean square error
 	select(starts_with("rmse")) %>% 
-	gather(key = model, value = rmse) %>% 
+	gather(key = model, value = rmse) %>%
+	mutate(model = recode(model, "rmse_diy" = "Model 1, DIY",
+												"rmse_len_ga" = "Model 3, Lenth Gestational",
+												"rmse_head_len_sex" = "Model 2, Head Length Sex")) %>%
 	# plot residual mean square error of the three models
 	ggplot(aes(x = model, y = rmse)) +
-	  geom_boxplot()
+	  geom_boxplot() +
+		labs(
+			x = "Model",
+			y = "Residual Mean Squared Errors"
+		)
 	
 ```
 
