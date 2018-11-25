@@ -12,14 +12,15 @@ library(tidyverse)
 
 ### Problem 1
 
+**Data Cleaning:**
 
-```{r}
+```{r data_cleaning}
 # read data from github repo
 homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv") %>% 
 	# create city_state variable
 	unite(col = "city_state", city:state, sep = ", ", remove = FALSE) %>% 
 	# create a variable for resolved
-	mutate(resolved = disposition %in% "Closed by arrest") %>%
+	mutate(resolved = as.numeric(disposition %in% "Closed by arrest")) %>%
 	# select cities with victim race
 	filter(!(city_state %in% c("Dallas, TX",
 														 "Phoenix, AZ",
@@ -29,18 +30,32 @@ homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homi
 	mutate(victim_age = as.numeric(victim_age),
 				 victim_race = if_else(victim_race == "White", "white", "non-white"),
 				 victim_race = fct_relevel(victim_race, "white")) 
+```
 
+**Test logistic regression on Baltimore, MD:**
 
-glm_test <- homicide %>%
-	filter(city_state == "Baltimore, MD")
+```{r logistic_regression_test}
+# get baltimore, MD
+glm_test <- homicide %>% filter(city_state == "Baltimore, MD")
+# fit logistic model
 glm_result <- glm(resolved ~ victim_age + victim_sex + victim_race, data = glm_test)
-glm_conf <- as_tibble(confint(glm_result))
-glm_result <- broom::tidy(glm_result)
-result_test <- as_tibble(cbind(glm_result, glm_conf)) %>%
+# tidy the regression output
+result_test <- broom::tidy(glm_result)
+# 
+result_test <- result_test %>%
 	janitor::clean_names() %>%
-	mutate(calc_upper = estimate + qnorm(0.975) * std_error,
-				 calc_lower = estimate - qnorm(0.975) * std_error)
+	mutate(conf_upper = estimate + qnorm(0.975) * std_error,
+				 conf_lower = estimate - qnorm(0.975) * std_error)
 
+result_test %>%
+	filter(term == "victim_racenon-white") %>% 
+	select(estimate, conf_upper, conf_lower) %>% 
+	knitr::kable()
+```
+
+**Logistic regression on all cities:**
+
+```{r regression_all_cities}
 glm_all_cities <- homicide %>% 
 	select(city_state, resolved, victim_age, victim_sex, victim_race) %>%
 	group_by(city_state) %>% 
@@ -54,7 +69,7 @@ glm_all_cities <- homicide %>%
 												 											 data = .x)))) %>%
 	select(city_state, glm_model) %>%
 	unnest() %>%
-	janitor::clean_names() %>% 
+	janitor::clean_names() %>%
 	# get confidence interval
 	mutate(conf_upper = estimate + qnorm(0.975) * std_error,
 				 conf_lower = estimate - qnorm(0.975) * std_error) %>%
@@ -62,7 +77,11 @@ glm_all_cities <- homicide %>%
 	mutate(estimate = exp(estimate),
 				 conf_upper = exp(conf_upper),
 				 conf_lower = exp(conf_lower))
+```
 
+**Plot odds ratios with confidence interval:**
+
+```{r plot}
 glm_all_cities %>% 
 	ggplot(aes(x = fct_reorder(city_state, estimate), y = estimate)) +
 	geom_point() +
@@ -74,9 +93,76 @@ glm_all_cities %>%
 	theme(
 		axis.text.x = element_text(angle = 90)
 	)
-	
+```
+
+**Comments:**
+Highest non-white vs white odds ratio of solved cases is Tempa, FL, and lowest one is Boston, MA. Most cities have odds ratio. Nashville, TN has largest standard error and Chicago, IL has lowest standard error. Generally speaking, the cases with non-white victims have lower solved cases odds ratios.
+
+### Problem 2
+
+```{r}
+birthweight <- read_csv("./birthweight.csv") %>% 
+# recode the factor variables, set controls
+	mutate(babysex = fct_recode(as.factor(babysex), "female" = "2", "male" = "1"),
+				 babysex = fct_relevel(babysex, "female"),
+				 frace = fct_recode(as.factor(frace),
+				 									 "white" = "1", "non_white" = "2", "non_white" = "3",
+				 									 "non_white" = "4", "non_white" = "8"),
+				 frace = fct_relevel(frace, "non_white"),
+				 malform = fct_recode(as.factor(malform), "absent" = "0", "present" = "1"),
+				 malform = fct_relevel(malform, "absent"),
+				 mrace = fct_recode(as.factor(mrace),
+				 									 "white" = "1", "non_white" = "2", "non_white" = "3",
+				 									 "non_white" = "4"),
+				 mrace = fct_relevel(mrace, "non_white")
+				 )
+
+birthweight_full <- lm(data = birthweight, formula = bwt ~ .)
+birthweight %>% skimr::skim()
+
+
 
 
 ```
+
+
+
+
+
+
+```{r }
+source('~/Documents/P8130 Biostatistical methods I/homework 5/stepwise_reg.r')
+
+birthweight_lm <- stepwise_reg(data = birthweight, y = "bwt", in_alpha = 0.01, out_alpha = 0.015)
+
+subset_birthweight <-
+	birthweight %>%
+	select(bwt, bhead, blength, mrace, delwt, gaweeks, smoken, ppbmi, babysex, mheight)
+
+```
+
+Do a stepwise regression, test each candidates if its p value less than predefined alpha level.
+
+```{r}
+birthweight %>%
+	modelr::add_predictions(model = birthweight_lm[[1]]) %>% 
+	modelr::add_residuals(model = birthweight_lm[[1]]) %>% 
+	ggplot(aes(x = pred, y = resid)) +
+	  geom_point()
+```
+
+```{r}
+bwt_len_ga <- lm(formula = bwt ~ blength + gaweeks, data = birthweight)
+bwt_head_len_sex <- lm(formula = bwt ~ bhead * blength * babysex, data = birthweight)
+
+
+```
+
+
+
+
+
+
+
 
 
