@@ -8,6 +8,8 @@ output: github_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(modelr)
+library(mgcv)
 ```
 
 ### Problem 1
@@ -152,8 +154,34 @@ birthweight %>%
 ```
 
 ```{r}
-bwt_len_ga <- lm(formula = bwt ~ blength + gaweeks, data = birthweight)
-bwt_head_len_sex <- lm(formula = bwt ~ bhead * blength * babysex, data = birthweight)
+
+
+
+
+
+
+bwt_diy <- "bwt ~ bhead + blength + mrace + delwt + gaweeks + smoken + ppbmi + babysex"
+bwt_len_ga <- "bwt ~ blength + gaweeks"
+bwt_head_len_sex <- "bwt ~ bhead * blength * babysex"
+
+
+cv_df <- crossv_mc(data = birthweight, n = 100)
+
+cv_df %>%
+	mutate(train = map(train, as_tibble),
+				 test = map(test, as_tibble)) %>%
+	mutate(lm_diy = map(.x = train,
+											.f = ~lm(formula = as.formula(bwt_diy),
+															 data = .x)),
+				 lm_len_ga = map(.x = train,
+				 								.f = ~lm(formula = as.formula(bwt_len_ga),
+				 												 data = .x)),
+				 lm_head_len_sex = map(.x = train,
+				 											.f = ~lm(formula = as.formula(bwt_head_len_sex),
+				 															 data = .x))
+				 )
+	
+	
 
 
 ```
