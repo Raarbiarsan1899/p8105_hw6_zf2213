@@ -16,7 +16,7 @@ library(mgcv)
 
 **Data Cleaning:**
 
-```{r data_cleaning}
+```{r data_cleaning_pr1}
 # read data from github repo
 homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv") %>% 
 	# create city_state variable
@@ -102,74 +102,197 @@ Highest non-white vs white odds ratio of solved cases is Tempa, FL, and lowest o
 
 ### Problem 2
 
-```{r}
+```{r data_cleaning_pr2}
 birthweight <- read_csv("./birthweight.csv") %>% 
-# recode the factor variables, set controls
+# recode the factor variables
 	mutate(babysex = fct_recode(as.factor(babysex), "female" = "2", "male" = "1"),
+				 # female as reference
 				 babysex = fct_relevel(babysex, "female"),
 				 frace = fct_recode(as.factor(frace),
 				 									 "white" = "1", "non_white" = "2", "non_white" = "3",
 				 									 "non_white" = "4", "non_white" = "8"),
+				 # non-white as reference
 				 frace = fct_relevel(frace, "non_white"),
 				 malform = fct_recode(as.factor(malform), "absent" = "0", "present" = "1"),
+				 # non malformation as reference
 				 malform = fct_relevel(malform, "absent"),
 				 mrace = fct_recode(as.factor(mrace),
 				 									 "white" = "1", "non_white" = "2", "non_white" = "3",
 				 									 "non_white" = "4"),
+				 # non-white as reference
 				 mrace = fct_relevel(mrace, "non_white")
 				 )
 
-birthweight_full <- lm(data = birthweight, formula = bwt ~ .)
-birthweight %>% skimr::skim()
-
-
-
-
 ```
 
 
+```{r regression_function}
 
+stepwise_reg <- function(data, y, in_alpha = 0.1) {
 
+### Local variable dictionary with starting values
+	
+	# 1. outcome column
+  outcome <- data[, y]
+	
+	# 2. included and not included predictors, depend on the direction
+	
+	  # initiating included predictors
+  	inside_pred <- data %>% select(-everything())
+   	# initiating not included predictors
+  	outside_pred <- data %>% select(-y)
+	
+	# 3. a temporary dataframe for regression, test coefficients
+ temp_dataframe <- cbind(outcome, outside_pred, inside_pred)
+	
+	# 4. get terms of regression, for categorical variables the term names ...
+	#    ... are different from predictor names
+  full_model <- lm(data = temp_dataframe, formula = as.formula(paste(y, "~ .")))
+  term_name <- (full_model$coefficients %>% names())[-1]
+	
+	# 5. predictor names, useful for link term names
+  predictor_pool <- colnames(temp_dataframe)
+  
+	# 6. a table to record p values for each selection procedure
+  p_value_history <- tibble(term = term_name)
+	
+	# 7. record selection history, which to include, which to remove
+  sel_history <- c()
+	
+	# 8. dataframe to store p values for candidates to include
+  temp_to_include <- tibble()
+	
+	# 9. initiating controller for while loop
+  controller <- TRUE
+	
+	# 10. initiating variable to store chosen predictor
+	selected_pred <- c()
+	
+	# 11. maximum p value during exclusion process
+	min_p <- 0
+	
+	# 12. record step number
+	step_no <- 1
+	
+	while (controller) {
+		
+	
+		
+		# empty the include temporary dataframe
+		temp_to_include <- tibble()
+			
+		# test statistics for predictors in candidates pool one by one ...
+		# ... and choose the one with smallest p-value if it is smaller than alpha level
+		
+		for (i in 1:ncol(outside_pred)) {
+			# create a temporary dataset combining:
+			# outcome, predictors already included, and the candidate to be test
+			temp_dataframe <- cbind(outcome, outside_pred[i], inside_pred)
+				
+			# get tidy regression summary after adding a new predictor
+			temp_lm <- lm(data = temp_dataframe, as.formula(paste(y, "~ ."))) %>%
+				summary() %>% broom::tidy()
+				
+			# create a table for all the statistics for the candidates in this while round
+			temp_to_include <- rbind(temp_to_include, temp_lm %>%
+																 	filter(str_detect(temp_lm$term,
+																 										colnames(temp_dataframe)[[2]])))
+			}
+			
+		# get minimum p value
+		min_p <- min(temp_to_include$p.value, na.rm = TRUE)
+			
+		# get predictor name of minimum p value, since occasionally two predictors
+		# have same p value, select only one of them
+		min_pred <- (temp_to_include %>% filter(p.value == min_p))$term[1]
+			
+		# for categorical variable, lm function will name the predictor
+		# as (predictorname) + (categorical level), so for the downstream
+		# process, we need to detect the predictor name correctly:
+		selected_pred <- predictor_pool[str_detect(min_pred, predictor_pool)]
+		
+		# record history
+		p_value_history <- full_join(x = p_value_history,
+																 y = temp_to_include %>% select(term, p.value),
+																 by = "term")
+		
+		# include if minimum p smaller than alpha level
+		if (min_p < in_alpha) {
+			# record selection history
+			print(paste("step", step_no, ": predictor", selected_pred,
+									"with minimum p value", min_p, "<",
+									in_alpha, ", continue,"))
+			# add predictor into the model
+			inside_pred <- cbind(inside_pred, data[, selected_pred])
+			outside_pred <- outside_pred %>% select(-selected_pred)
+		}
+		
+		if (min_p >= in_alpha) {
+			print(paste("step", step_no, ": predictor", selected_pred,
+									"with minimum p value", min_p, ">",
+									in_alpha, ", end search."))
+		}
+		
+		# if nothing in the candidates pool to be included,
+		# then controller will be false 
+		controller <- min_p < in_alpha
+		step_no = step_no + 1
+	}
+	
+	# name the column with each round
+	colnames(p_value_history)[2:ncol(p_value_history)] <-
+		paste("round", c(1:100), "p_value", sep = "_")[1:(ncol(p_value_history) - 1)]
+	
+	# selected model
+	temp_dataframe <- cbind(outcome, inside_pred)
+	selected_model <- lm(data = temp_dataframe, as.formula(paste(y, "~ .")))
+	return(list(model = selected_model,
+							p_history = p_value_history,
+							selection_history = sel_history))
+}
 
-
-```{r }
-source('~/Documents/P8130 Biostatistical methods I/homework 5/stepwise_reg.r')
-
-birthweight_lm <- stepwise_reg(data = birthweight, y = "bwt", in_alpha = 0.01, out_alpha = 0.015)
-
-subset_birthweight <-
-	birthweight %>%
-	select(bwt, bhead, blength, mrace, delwt, gaweeks, smoken, ppbmi, babysex, mheight)
+# forward selection
+birthweight_lm <- stepwise_reg(data = birthweight, y = "bwt", in_alpha = 0.01)
+birthweight_lm[[1]] %>% summary() %>% broom::tidy() %>% knitr::kable()
 
 ```
 
-Do a stepwise regression, test each candidates if its p value less than predefined alpha level.
+Do a stepwise forward regression:
+Start with a model with only intercept, Y ~ 1, fit each predictors into the model to see if its p value less than predefined alpha level, if p value small than predefined alpha level, then add to the model, Y ~ X1.
+Then, fit the remaining predictors one by one into the model with X1, if the p value small than predefined alpha level, then add to the model, Y ~ X1 + X2.
+Repeat the cycles until no remaining predictors will have p value less than predefined alpha level, return the model and selection history.
 
-```{r}
+
+
+```{r residuals_vs_predictions}
+
+# plot residue mean squre errors against predictions
 birthweight %>%
+	# add predictions
 	modelr::add_predictions(model = birthweight_lm[[1]]) %>% 
+	# add residuals
 	modelr::add_residuals(model = birthweight_lm[[1]]) %>% 
+	# plot
 	ggplot(aes(x = pred, y = resid)) +
 	  geom_point()
+
 ```
 
-```{r}
+```{r compare_models}
 
-
-
-
-
-
+# diy model
 bwt_diy <- "bwt ~ bhead + blength + mrace + delwt + gaweeks + smoken + ppbmi + babysex"
+# baby's length (cm) and gestational age (week)
 bwt_len_ga <- "bwt ~ blength + gaweeks"
+# baby's head circumference (cm), baby's length (cm), baby's sex, and all interactions
 bwt_head_len_sex <- "bwt ~ bhead * blength * babysex"
 
-
-cv_df <- crossv_mc(data = birthweight, n = 100)
-
-cv_df %>%
+# generate training sets and test sets
+cv_df <- crossv_mc(data = birthweight, n = 100) %>% 
+	# coerce to data frame
 	mutate(train = map(train, as_tibble),
 				 test = map(test, as_tibble)) %>%
+	# generate three models to training sets
 	mutate(lm_diy = map(.x = train,
 											.f = ~lm(formula = as.formula(bwt_diy),
 															 data = .x)),
@@ -179,12 +302,29 @@ cv_df %>%
 				 lm_head_len_sex = map(.x = train,
 				 											.f = ~lm(formula = as.formula(bwt_head_len_sex),
 				 															 data = .x))
-				 )
+				 ) %>% 
+	# calculate residue mean square errors of test datasets
+	mutate(rmse_diy = map2_dbl(.x = lm_diy,
+														 .y = test,
+														 .f = ~rmse(model = .x, data = .y)),
+				 rmse_len_ga = map2_dbl(.x = lm_len_ga,
+				 											 .y = test,
+				 											 .f = ~rmse(model = .x, data = .y)),
+				 rmse_head_len_sex = map2_dbl(.x = lm_head_len_sex,
+				 														 .y = test,
+				 														 .f = ~rmse(model = .x, data = .y))
+	) %>% 
+	# get mean square error
+	select(starts_with("rmse")) %>% 
+	gather(key = model, value = rmse) %>% 
+	# plot residual mean square error of the three models
+	ggplot(aes(x = model, y = rmse)) +
+	  geom_boxplot()
 	
-	
-
-
 ```
+
+**Comments:**
+It seems forward stepwise regression get best models among the three, the #2 model is. 
 
 
 
