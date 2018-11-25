@@ -278,6 +278,25 @@ birthweight %>%
 
 ```
 
+Model #1:
+
+baby's head circumference (cm)
+baby's birth length (cm)
+mother's race
+...
+
+Model #2:
+
+baby's head circumference (cm),
+baby's length (cm),
+baby's sex
+
+Model #3:
+
+baby's length (cm),
+gestational age (week)
+
+
 ```{r compare_models}
 
 # diy model
@@ -288,7 +307,7 @@ bwt_len_ga <- "bwt ~ blength + gaweeks"
 bwt_head_len_sex <- "bwt ~ bhead * blength * babysex"
 
 # generate training sets and test sets
-cv_df <- crossv_mc(data = birthweight, n = 100) %>% 
+crossv_mc(data = birthweight, n = 100) %>% 
 	# coerce to data frame
 	mutate(train = map(train, as_tibble),
 				 test = map(test, as_tibble)) %>%
@@ -324,7 +343,7 @@ cv_df <- crossv_mc(data = birthweight, n = 100) %>%
 ```
 
 **Comments:**
-It seems forward stepwise regression get best models among the three, the #2 model is. 
+It seems forward stepwise regression get best models among the three, the #2 model is in the middle, #3 model is worst.
 
 
 
