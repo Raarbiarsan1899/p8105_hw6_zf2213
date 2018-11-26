@@ -41,7 +41,7 @@ homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homi
 # get baltimore, MD
 glm_test <- homicide %>% filter(city_state == "Baltimore, MD")
 # fit logistic model
-glm_result <- glm(resolved ~ victim_age + victim_sex + victim_race, data = glm_test)
+glm_result <- glm(resolved ~ victim_age + victim_sex + victim_race, data = glm_test, family = binomial())
 # tidy the regression output
 result_test <- broom::tidy(glm_result)
 # 
@@ -52,7 +52,9 @@ result_test <- result_test %>%
 
 result_test %>%
 	filter(term == "victim_racenon-white") %>% 
-	select(estimate, conf_upper, conf_lower) %>% 
+	mutate(estimate = exp(estimate),
+				 conf_upper = exp(estimate), conf_lower = exp(estimate)) %>% 
+	select(term, estimate, conf_upper, conf_lower) %>% 
 	knitr::kable()
 ```
 
@@ -64,7 +66,7 @@ glm_all_cities <- homicide %>%
 	group_by(city_state) %>% 
 	nest(resolved, victim_age, victim_sex, victim_race) %>%
 	# get logistic regression model
-	mutate(glm_model = map(.x = data, .f = ~ broom::tidy(glm(resolved ~ victim_age + victim_sex + victim_race, data = .x)))) %>%
+	mutate(glm_model = map(.x = data, .f = ~ glm(resolved ~ victim_age + victim_sex + victim_race, data = .x, family = binomial()) %>% broom::tidy())) %>%
 	select(city_state, glm_model) %>%
 	unnest() %>%
 	janitor::clean_names() %>%
