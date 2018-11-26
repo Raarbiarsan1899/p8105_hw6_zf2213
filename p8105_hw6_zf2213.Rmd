@@ -22,15 +22,16 @@ homicide <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homi
 	# create city_state variable
 	unite(col = "city_state", city:state, sep = ", ", remove = FALSE) %>% 
 	# create a variable for resolved
-	mutate(resolved = as.numeric(disposition %in% "Closed by arrest")) %>%
+	mutate(resolved = as.numeric(disposition %in% "Closed by arrest")) %>% 
 	# select cities with victim race
 	filter(!(city_state %in% c("Dallas, TX",
 														 "Phoenix, AZ",
 														 "Kansas City, MO",
-														 "Tulsa, AL"))) %>%
+														 "Tulsa, AL"))) %>% 
 	# change victim to numeric variable, race into factors
 	mutate(victim_age = as.numeric(victim_age),
 				 victim_race = if_else(victim_race == "White", "white", "non-white"),
+				 victim_sex = as.factor(victim_sex),
 				 victim_race = fct_relevel(victim_race, "white")) 
 ```
 
@@ -63,12 +64,7 @@ glm_all_cities <- homicide %>%
 	group_by(city_state) %>% 
 	nest(resolved, victim_age, victim_sex, victim_race) %>%
 	# get logistic regression model
-	mutate(glm_model = map(.x = data,
-												 .f = ~ broom::tidy(glm(resolved ~
-												 											 	victim_age + 
-												 											 	victim_sex +
-												 											 	victim_race,
-												 											 data = .x)))) %>%
+	mutate(glm_model = map(.x = data, .f = ~ broom::tidy(glm(resolved ~ victim_age + victim_sex + victim_race, data = .x)))) %>%
 	select(city_state, glm_model) %>%
 	unnest() %>%
 	janitor::clean_names() %>%
@@ -333,6 +329,8 @@ bwt_diy <- "bwt ~ bhead + blength + mrace + delwt + gaweeks + smoken + ppbmi + b
 bwt_len_ga <- "bwt ~ blength + gaweeks"
 # baby's head circumference (cm), baby's length (cm), baby's sex, and all interactions
 bwt_head_len_sex <- "bwt ~ bhead * blength * babysex"
+
+set.seed(29)
 
 # generate training sets and test sets
 crossv_mc(data = birthweight, n = 100) %>% 
