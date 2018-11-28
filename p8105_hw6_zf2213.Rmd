@@ -53,7 +53,7 @@ result_test <- result_test %>%
 result_test %>%
 	filter(term == "victim_racenon-white") %>% 
 	mutate(estimate = exp(estimate),
-				 conf_upper = exp(estimate), conf_lower = exp(estimate)) %>% 
+				 conf_upper = exp(conf_upper), conf_lower = exp(conf_lower)) %>% 
 	select(term, estimate, conf_upper, conf_lower) %>% 
 	knitr::kable()
 ```
